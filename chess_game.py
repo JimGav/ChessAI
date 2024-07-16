@@ -8,6 +8,7 @@ class ChessGame:
 		self._curr_color = "white"	# color of the current side's turn
 		self._selected_btn = None 	# The button that is selected on the gui
 		self._piece_imgs = None			# create_gui will load them after root window is created
+		self._ai_opponent = True
 		self._board = self.create_board()	 	# Create 2d list representing the current state of the  self._board
 		self._root_win = self.create_gui()	# Create the tkinter gui  self._board 
 
@@ -88,17 +89,32 @@ class ChessGame:
 				self._selected_btn = b
 		# Deselect button and play move if move valid
 		else:
+			if self.in_checkmate(self._board, self._curr_color):
+				print("checkmated " + self._curr_color)
+				self.update_gui(winner_color = self._curr_color)
+				return
 			x = self._selected_btn.grid_info()["row"]	  
 			y = self._selected_btn.grid_info()["column"]
 			self._selected_btn = None
 			if self.move_valid((x, y),(i,j)):
 				self.play_move((x, y),(i,j))
 				self.pass_move()
+
+				# AI reply
+				if self.in_checkmate(self._board, self._curr_color):
+					print("checkmated " + self._curr_color)
+					self.update_gui(winner_color = self._curr_color)
+					return
+				if self._ai_opponent:
+					move = self.find_move(self._board, self._curr_color)
+					if self.move_valid(*move):
+						self.play_move(*move)
+						self.pass_move()
 				
 		self.update_gui()
 
 	# Updates gui to match the  self._board
-	def update_gui(self):
+	def update_gui(self, winner_color=None):
 		for btn in self._root_win.grid_slaves():
 			i = btn.grid_info()["row"]	  
 			j = btn.grid_info()["column"]
@@ -108,6 +124,10 @@ class ChessGame:
 				btn.config(background="yellow")
 			else:
 				btn.config(background=self._colors[1] if (i+j)%2 == 0 else self._colors[0])
+
+			# Color of checkmated king = red
+			if winner_color and piece == winner_color + "_king":
+				btn.config(background = "red")
 
 	# Play the move on  self._board. If move is illegal return False
 	def play_move(self, start:tuple, target:tuple):
@@ -129,10 +149,30 @@ class ChessGame:
 					return i,j
 		return None
 
+	def in_check(self, board, color:str):		
+			enemy_targets = []
+			for i in range(8):
+					for j in range(8):
+						if board[i][j] != None and board[i][j][0] != color[0]:
+							for target in self.get_avail_squares((i,j), board):
+								enemy_targets.append(target)
+			return self.find_pos(board, color + "_king") in enemy_targets
+	
+	def in_checkmate(self, board, color:str):	#todo : add legal moves function
+		moves = []
+		for i in range(8):
+				for j in range(8):
+					if board[i][j] != None and board[i][j][0] == color[0]:
+						for target in self.get_avail_squares((i,j), board):
+							moves.append([(i,j),target])
+
+		legal_moves = self.remove_illegal_moves(moves)
+		return len(legal_moves) == 0
+
 	###################### Game rules functions	######################
 
 	# Check if given move is valid. Correct color, legal etc
-	# Every validation happens here. get_avail_squares just returns the moves according to rules
+	# Every validation happens here. get_avail_squares just returns the targets according to rules
 	def move_valid(self, start:tuple, target:tuple):
 		# Validate bounds
 		if not self.in_bounds(*start) or not self.in_bounds(*target):
@@ -262,7 +302,7 @@ class ChessGame:
 	
 	def in_bounds(self, i, j):
 		return i >= 0 and j >=0 and i < 8 and j < 8
-	
+
 	# Checks if a move is illegal by seeing if king is in check after playing the move
 	def illegal_move(self, start, target):
 		t_board = [[*row] for row in self._board] # temp board to play the move. We do not want to change the actual board
@@ -270,34 +310,32 @@ class ChessGame:
 		t_board[target[0]][target[1]] = t_board[start[0]][start[1]]
 		t_board[start[0]][start[1]] = None	
 
-		if self.in_check(t_board) == 1 and self._curr_color == "white":
+		color = self._curr_color
+
+		if self.in_check(t_board, color) == 1:
 			return True
-		if self.in_check(t_board) == -1 and self._curr_color == "black":
-			return True
+
 		return False
+	
+	def remove_illegal_moves(self, moves):
+		legal_moves = [move for move in moves if not self.illegal_move(*move)]
+		return legal_moves
+	##################################################################
 
-	# Returns 1 if white king in check, -1 if black in check, 0 if none
-	def in_check(self, board):		
-		w_targets = set()
+	####################### AI FUNCTIONS #############################
+
+	def find_move(self, board, color:str):
+		moves = []
 		for i in range(8):
 			for j in range(8):
-				if board[i][j] != None and board[i][j][0] == "w":
-					w_targets = w_targets.union(self.get_avail_squares((i,j), board))
-		b_targets = set()
-		for i in range(8):
-			for j in range(8):
-				if board[i][j] != None and board[i][j][0] == "b":
-					b_targets = b_targets.union(self.get_avail_squares((i,j), board))
+				if board[i][j] is None:
+					continue
+				if board[i][j][0] == color[0]:
+					for target in self.get_avail_squares((i,j), board):
+						moves.append([(i,j),target])
 
-		print(self.find_pos(board, "white_king"), b_targets)
-		if self.find_pos(board, "white_king") in b_targets:
-			print("check white")
-			return 1
-		if self.find_pos(board, "black_king") in w_targets:
-			print("check b")
-			return -1
-
-		return 0
+		legal_moves = self.remove_illegal_moves(moves)
+		return legal_moves[random.randint(0 , len(legal_moves)-1)]
 
 	##################################################################
 
