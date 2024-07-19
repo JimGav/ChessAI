@@ -1,14 +1,17 @@
 from tkinter import *
-import random
+from copy import deepcopy
+import random,sys
+
 
 class ChessGame:
 	# Constructor
-	def __init__(self, colors=["midnight blue", "gainsboro"]):
+	def __init__(self, colors=["midnight blue", "gainsboro"], ai_max_move_depth=2):
 		self._colors = colors				# list of 2 colors for the gui  self._board
 		self._curr_color = "white"	# color of the current side's turn
 		self._selected_btn = None 	# The button that is selected on the gui
 		self._piece_imgs = None			# create_gui will load them after root window is created
 		self._ai_opponent = True
+		self._ai_max_move_depth = ai_max_move_depth
 		self._board = self.create_board()	 	# Create 2d list representing the current state of the  self._board
 		self._root_win = self.create_gui()	# Create the tkinter gui  self._board 
 
@@ -90,25 +93,23 @@ class ChessGame:
 		# Deselect button and play move if move valid
 		else:
 			if self.in_checkmate(self._board, self._curr_color):
-				print("checkmated " + self._curr_color)
 				self.update_gui(winner_color = self._curr_color)
 				return
 			x = self._selected_btn.grid_info()["row"]	  
 			y = self._selected_btn.grid_info()["column"]
 			self._selected_btn = None
-			if self.move_valid((x, y),(i,j)):
-				self.play_move((x, y),(i,j))
+			if self.move_valid((x, y),(i,j), self._board):
+				self._board = self.play_move((x, y),(i,j), self._board)
 				self.pass_move()
 
 				# AI reply
 				if self.in_checkmate(self._board, self._curr_color):
-					print("checkmated " + self._curr_color)
 					self.update_gui(winner_color = self._curr_color)
 					return
 				if self._ai_opponent:
-					move = self.find_move(self._board, self._curr_color)
-					if self.move_valid(*move):
-						self.play_move(*move)
+					move = self.find_move([[*row] for row in self._board], self._curr_color)	# Pass new array, not reference to original so it won't change
+					if self.move_valid(*move, self._board):
+						self._board = self.play_move(*move, self._board)
 						self.pass_move()
 				
 		self.update_gui()
@@ -129,10 +130,24 @@ class ChessGame:
 			if winner_color and piece == winner_color + "_king":
 				btn.config(background = "red")
 
-	# Play the move on  self._board. If move is illegal return False
-	def play_move(self, start:tuple, target:tuple):
-		self._board[target[0]][target[1]] = self._board[start[0]][start[1]]
-		self._board[start[0]][start[1]] = None	
+	# Prints the board on console 
+	def print_board(self, board):
+		for i in range(8):
+			print(33*"=")
+			for j in range(8):
+				if board[i][j] is None:
+					sys.stdout.write("|   ")
+				else:
+					sys.stdout.write("|"+board[i][j].split("_")[0][0] + "_" + board[i][j].split("_")[1][0])
+			print("|")
+		print(33*"=")
+
+	# Return a new board after playing the move on original board
+	def play_move(self, start:tuple, target:tuple, board):
+		t = deepcopy(board)
+		t[target[0]][target[1]] = t[start[0]][start[1]]
+		t[start[0]][start[1]] = None	
+		return t
 
 	# Passes move to the other color by flipping self._curr_color
 	def pass_move(self):
@@ -158,33 +173,39 @@ class ChessGame:
 								enemy_targets.append(target)
 			return self.find_pos(board, color + "_king") in enemy_targets
 	
-	def in_checkmate(self, board, color:str):	#todo : add legal moves function
-		moves = []
-		for i in range(8):
-				for j in range(8):
-					if board[i][j] != None and board[i][j][0] == color[0]:
-						for target in self.get_avail_squares((i,j), board):
-							moves.append([(i,j),target])
-
-		legal_moves = self.remove_illegal_moves(moves)
-		return len(legal_moves) == 0
+	def in_checkmate(self, board, color:str):	
+		return len(self.get_legal_moves(board, color)) == 0
 
 	###################### Game rules functions	######################
 
+	# Returns all legal moves in the current position
+	def get_legal_moves(self, board, color):
+		
+		moves = []
+		for i in range(8):
+			for j in range(8):
+				if board[i][j] is None:
+					continue
+				if board[i][j][0] == color[0]:
+					for target in self.get_avail_squares((i,j),board):
+						move = [(i,j), target]
+						if self.move_valid(*move,board):
+							moves.append(move)
+		if board[2][2] == "white_queen":				
+			print([(2,2),(6,2) in moves])
+		return moves
+
 	# Check if given move is valid. Correct color, legal etc
 	# Every validation happens here. get_avail_squares just returns the targets according to rules
-	def move_valid(self, start:tuple, target:tuple):
+	def move_valid(self, start:tuple, target:tuple, board):
 		# Validate bounds
 		if not self.in_bounds(*start) or not self.in_bounds(*target):
 			return False
 		# Validate piece not None
-		if self._board[start[0]][start[1]] is None:
-			return False
-		# Validate move in correct turn
-		if self._board[start[0]][start[1]][0] != self._curr_color[0]:
+		if board[start[0]][start[1]] is None:
 			return False
 		# Validate legal move
-		if not target in self.get_avail_squares(start, self._board) or self.illegal_move(start, target):
+		if not target in self.get_avail_squares(start, board) or self.illegal_move(start, target):
 			return False
 		return True
 	
@@ -194,25 +215,25 @@ class ChessGame:
 
 		# white pawns
 		if  board[i][j] == "white_pawn":
-			if  board[i+1][j] is None:
+			if i < 7 and board[i+1][j] is None:
 				avail_targets.add((i+1,j))
 			if i == 1 and  board[i+2][j] is None and  board[i+1][j] is None:
 				avail_targets.add((i+2,j))
-			if j < 7 and  board[i+1][j+1] is not None and board[i+1][j+1][0] == "b":
+			if i < 7 and j < 7 and  board[i+1][j+1] is not None and board[i+1][j+1][0] == "b":
 				avail_targets.add((i+1,j+1))
-			if j > 0 and  board[i+1][j-1] is not None and  board[i+1][j-1][0] == "b":
+			if i < 7 and j > 0 and  board[i+1][j-1] is not None and  board[i+1][j-1][0] == "b":
 				avail_targets.add((i+1,j-1))
-			if i == 7:
+			if i == 7:	#todo: move this shit
 				board[i][j] = "white_queen"
 	# black pawns
 		if  board[i][j] == "black_pawn":
-			if  board[i-1][j] is None:
+			if i>0 and  board[i-1][j] is None:
 				avail_targets.add((i-1,j))
 			if i == 6 and  board[i-2][j] is None  and  board[i-1][j] is None:
 				avail_targets.add((i-2,j))
-			if j < 7 and  board[i-1][j+1] is not None and  board[i-1][j+1][0] == "w":
+			if i>0 and j < 7 and  board[i-1][j+1] is not None and  board[i-1][j+1][0] == "w":
 				avail_targets.add((i-1,j+1))
-			if j > 0 and  board[i-1][j-1] is not None and  board[i-1][j-1][0] == "w":
+			if i>0 and j > 0 and  board[i-1][j-1] is not None and  board[i-1][j-1][0] == "w":
 				avail_targets.add((i-1,j-1))
 			if i == 0:
 				board[i][j] = "black_queen"
@@ -312,7 +333,7 @@ class ChessGame:
 
 		color = self._curr_color
 
-		if self.in_check(t_board, color) == 1:
+		if self.in_check(t_board, color):
 			return True
 
 		return False
@@ -323,19 +344,76 @@ class ChessGame:
 	##################################################################
 
 	####################### AI FUNCTIONS #############################
+	# Minimax modeling: State = [board, curr_color], GoalState = checkmate, get_successors()
 
 	def find_move(self, board, color:str):
-		moves = []
-		for i in range(8):
-			for j in range(8):
-				if board[i][j] is None:
-					continue
-				if board[i][j][0] == color[0]:
-					for target in self.get_avail_squares((i,j), board):
-						moves.append([(i,j),target])
 
-		legal_moves = self.remove_illegal_moves(moves)
-		return legal_moves[random.randint(0 , len(legal_moves)-1)]
+		m = self.get_legal_moves(board, color)
+
+		self.print_board(board)
+		print("legal moves = ", m)
+
+		return m[random.randint(0,len(m)-1)]
+
+		# best_move = None
+		# lowest_minimax = 999
+		# for move in self.get_legal_moves(board, color):
+		# 	child_state = (self.play_move(move[0],move[1],board), "white")
+		# 	minimax_val = self.minimax(child_state, 0)
+		# 	if minimax_val < lowest_minimax:
+		# 		lowest_minimax = minimax_val
+		# 		best_move = move
+
+		# return best_move
+
+	# def minimax(self, state, depth):
+	# 	board, color = state
+
+	# 	depth += 1
+
+	# 	if self.in_checkmate(board, "black"):
+	# 		print(1)
+	# 		return 1
+	# 	elif self.in_checkmate(board, "white"):
+	# 		print(2)
+	# 		return -1
+
+	# 	if depth == self._ai_max_move_depth:
+	# 		return 10	# todo: add eval func
+
+	# 	successor_minimax = [self.minimax(successor, depth) for successor in self.get_successors(state)]
+
+	# 	if color == "white":	# Maximizer
+	# 		return max(successor_minimax)
+	# 	else:	# Minimizer
+	# 		return min(successor_minimax)
+
+		
+
+	# def get_successors(self, state):
+	# 	board, color = state
+
+	# 	successors = []
+	# 	for move in self.get_legal_moves(board, color):
+	# 		new_board = self.play_move(*move,board)
+	# 		if color == "white":
+	# 			new_state = (new_board, "black")
+	# 		else:
+	# 			new_state = (new_board, "white")
+	# 		successors.append(new_state)
+		
+
+		# if board[2][2] == "white_queen":
+		# 	print("successors of :")
+		# 	self.print_board(board)
+		# 	for s in successors:
+		# 		print(100*"/")
+		# 		print(self.find_pos(s[0], "white_queen"))
+
+			# exit()	
+
+		# return successors
+
 
 	##################################################################
 
