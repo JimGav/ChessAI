@@ -2,6 +2,12 @@ from tkinter import *
 from copy import deepcopy
 import random,sys
 
+"""
+TODO:
+- clean this shit up
+- add evaluation function for non terminal states in minimax
+"""
+
 
 class ChessGame:
 	# Constructor
@@ -98,17 +104,18 @@ class ChessGame:
 			x = self._selected_btn.grid_info()["row"]	  
 			y = self._selected_btn.grid_info()["column"]
 			self._selected_btn = None
-			if self.move_valid((x, y),(i,j), self._board):
+			if self.move_valid((x, y),(i,j), self._board, self._curr_color):
 				self._board = self.play_move((x, y),(i,j), self._board)
 				self.pass_move()
+				self.update_gui()
 
 				# AI reply
 				if self.in_checkmate(self._board, self._curr_color):
 					self.update_gui(winner_color = self._curr_color)
 					return
 				if self._ai_opponent:
-					move = self.find_move([[*row] for row in self._board], self._curr_color)	# Pass new array, not reference to original so it won't change
-					if self.move_valid(*move, self._board):
+					move = self.find_move(deepcopy(self._board), self._curr_color)	# Pass new array, not reference to original so it won't change
+					if self.move_valid(*move, self._board, self._curr_color):
 						self._board = self.play_move(*move, self._board)
 						self.pass_move()
 				
@@ -189,15 +196,14 @@ class ChessGame:
 				if board[i][j][0] == color[0]:
 					for target in self.get_avail_squares((i,j),board):
 						move = [(i,j), target]
-						if self.move_valid(*move,board):
+						if self.move_valid(*move,board, color):
 							moves.append(move)
-		if board[2][2] == "white_queen":				
-			print([(2,2),(6,2) in moves])
+
 		return moves
 
 	# Check if given move is valid. Correct color, legal etc
 	# Every validation happens here. get_avail_squares just returns the targets according to rules
-	def move_valid(self, start:tuple, target:tuple, board):
+	def move_valid(self, start:tuple, target:tuple, board, color):
 		# Validate bounds
 		if not self.in_bounds(*start) or not self.in_bounds(*target):
 			return False
@@ -205,7 +211,7 @@ class ChessGame:
 		if board[start[0]][start[1]] is None:
 			return False
 		# Validate legal move
-		if not target in self.get_avail_squares(start, board) or self.illegal_move(start, target):
+		if not target in self.get_avail_squares(start, board) or self.illegal_move(start, target, board, color):
 			return False
 		return True
 	
@@ -325,18 +331,9 @@ class ChessGame:
 		return i >= 0 and j >=0 and i < 8 and j < 8
 
 	# Checks if a move is illegal by seeing if king is in check after playing the move
-	def illegal_move(self, start, target):
-		t_board = [[*row] for row in self._board] # temp board to play the move. We do not want to change the actual board
-		# Play the move
-		t_board[target[0]][target[1]] = t_board[start[0]][start[1]]
-		t_board[start[0]][start[1]] = None	
-
-		color = self._curr_color
-
-		if self.in_check(t_board, color):
-			return True
-
-		return False
+	def illegal_move(self, start, target, board, color):
+		t_board = self.play_move(start, target, board)
+		return self.in_check(t_board, color)
 	
 	def remove_illegal_moves(self, moves):
 		legal_moves = [move for move in moves if not self.illegal_move(*move)]
@@ -347,73 +344,50 @@ class ChessGame:
 	# Minimax modeling: State = [board, curr_color], GoalState = checkmate, get_successors()
 
 	def find_move(self, board, color:str):
-
-		m = self.get_legal_moves(board, color)
-
-		self.print_board(board)
-		print("legal moves = ", m)
-
-		return m[random.randint(0,len(m)-1)]
-
-		# best_move = None
-		# lowest_minimax = 999
-		# for move in self.get_legal_moves(board, color):
-		# 	child_state = (self.play_move(move[0],move[1],board), "white")
-		# 	minimax_val = self.minimax(child_state, 0)
-		# 	if minimax_val < lowest_minimax:
-		# 		lowest_minimax = minimax_val
-		# 		best_move = move
-
-		# return best_move
-
-	# def minimax(self, state, depth):
-	# 	board, color = state
-
-	# 	depth += 1
-
-	# 	if self.in_checkmate(board, "black"):
-	# 		print(1)
-	# 		return 1
-	# 	elif self.in_checkmate(board, "white"):
-	# 		print(2)
-	# 		return -1
-
-	# 	if depth == self._ai_max_move_depth:
-	# 		return 10	# todo: add eval func
-
-	# 	successor_minimax = [self.minimax(successor, depth) for successor in self.get_successors(state)]
-
-	# 	if color == "white":	# Maximizer
-	# 		return max(successor_minimax)
-	# 	else:	# Minimizer
-	# 		return min(successor_minimax)
-
+		state = [board, color]
 		
+		min_minimax = 999
+		best_move = None
+		for move in self.get_legal_moves(board, color):
+			s = [self.play_move(*move, board), "white"]
+			m = self.minimax(s, 0)
+			if m < min_minimax:
+				min_minimax = m
+				best_move = move
 
-	# def get_successors(self, state):
-	# 	board, color = state
+		return best_move
 
-	# 	successors = []
-	# 	for move in self.get_legal_moves(board, color):
-	# 		new_board = self.play_move(*move,board)
-	# 		if color == "white":
-	# 			new_state = (new_board, "black")
-	# 		else:
-	# 			new_state = (new_board, "white")
-	# 		successors.append(new_state)
+	def minimax(self, state, depth):
+		board, color = state
+		depth += 1
+
+		if self.in_checkmate(board, "black"):
+			return 1
+		elif self.in_checkmate(board, "white"):
+			return -1
+		if depth == self._ai_max_move_depth:
+			return 0	# todo: add eval func
 		
+		successor_minimax = [self.minimax(successor, depth) for successor in self.get_successors(state)]
+		if color == "white":	# Maximizer
+			return max(successor_minimax)
+		else:	# Minimizer
+			return min(successor_minimax)
+	
+	# Get successor states of given state
+	def get_successors(self, state):
+		board, color = state
 
-		# if board[2][2] == "white_queen":
-		# 	print("successors of :")
-		# 	self.print_board(board)
-		# 	for s in successors:
-		# 		print(100*"/")
-		# 		print(self.find_pos(s[0], "white_queen"))
+		successors = []
+		for move in self.get_legal_moves(board, color):
+			s = [self.play_move(move[0],move[1], board)]
+			if color == "white":
+				s.append("black")
+			else:
+				s.append("white")
+			successors.append(s)
 
-			# exit()	
-
-		# return successors
-
+		return successors
 
 	##################################################################
 
