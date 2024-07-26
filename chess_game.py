@@ -5,7 +5,6 @@ import random,sys,time
 """
 TODO:
 - fix pawn promote + castling
-- add evaluation function for non terminal states in minimax
 - optimize performance
 """
 
@@ -183,6 +182,23 @@ class ChessGame:
 	# Returns whether given position is inside the bounds of chess board
 	def in_bounds(self, i, j):
 		return i >= 0 and j >= 0 and i < 8 and j < 8
+	# Returns the number of points the given color has
+	def get_points(self, board, color):
+		points = 0
+		for i in range(8):
+			for j in range(8):
+				piece = board[i][j]
+				if piece is None:
+					continue
+				if piece == color + "_pawn":
+					points += 1
+				if piece == color + "_knight" or piece == color + "_bishop":
+					points += 3
+				if piece == color + "_rook":
+					points += 5
+				if piece == color + "_queen":
+					points += 9
+		return points
 	""""""""""""""""""""""""""""""""""""""""""""""""""
 
 
@@ -335,17 +351,16 @@ class ChessGame:
 	""""""""""""" AI agent functions """""""""""""""""""
 	# Finds move for given color
 	def find_move(self, board, color:str):
-		state = [board, color]
-		
-		min_minimax = 999
+		min_minimax = 99999
 		best_move = None
-		for move in self.get_valid_moves(board, color):
+		legal_moves = self.get_valid_moves(board, color)
+		random.shuffle(legal_moves)
+		for move in legal_moves:
 			s = [self.play_move(*move, board), "white"]
 			m = self.minimax(s, 0)
 			if m < min_minimax:
 				min_minimax = m
 				best_move = move
-
 		return best_move
 	# Evaluates the minimax value for given state
 	def minimax(self, state, depth):
@@ -353,11 +368,11 @@ class ChessGame:
 		depth += 1
 
 		if self.in_checkmate(board, "black"):
-			return 1
+			return 999
 		elif self.in_checkmate(board, "white"):
-			return -1
+			return -999
 		if depth == self._ai_max_move_depth:
-			return 0	# todo: add eval func
+			return self.eval(state)
 		
 		successor_minimax = [self.minimax(successor, depth) for successor in self.get_successors(state)]
 		if color == "white":	# Maximizer
@@ -378,6 +393,11 @@ class ChessGame:
 			successors.append(s)
 
 		return successors
+	# Evaluates the minimax value of a given state
+	def eval(self, state):
+		board, color = state
+		return self.get_points(board, "white")-self.get_points(board, "black")
+	
 	""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 
