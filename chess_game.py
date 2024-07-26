@@ -1,26 +1,28 @@
 from tkinter import *
 from copy import deepcopy
-import random,sys
+import random,sys,time
 
 """
 TODO:
-- clean this shit up
+- fix pawn promote + castling
 - add evaluation function for non terminal states in minimax
+- optimize performance
 """
 
 
 class ChessGame:
 	# Constructor
 	def __init__(self, colors=["midnight blue", "gainsboro"], ai_max_move_depth=2):
-		self._colors = colors				# list of 2 colors for the gui  self._board
-		self._curr_color = "white"	# color of the current side's turn
+		self._colors = colors				# List of 2 colors for the gui
+		self._curr_color = "white"	# Color of whoever's turn is it
 		self._selected_btn = None 	# The button that is selected on the gui
-		self._piece_imgs = None			# create_gui will load them after root window is created
-		self._ai_opponent = True
-		self._ai_max_move_depth = ai_max_move_depth
-		self._board = self.create_board()	 	# Create 2d list representing the current state of the  self._board
-		self._root_win = self.create_gui()	# Create the tkinter gui  self._board 
+		self._piece_imgs = None			# Images for each piece. create_gui will load them after root window is created
+		self._ai_opponent = True		
+		self._ai_max_move_depth = ai_max_move_depth	# Maximum recursion depth for minimax function => how many states ahead will the agent check
+		self._board = self.create_board()	 	# Create 2d list representing the current state of self._board
+		self._root_win = self.create_gui()	# Create the tkinter gui 
 
+	""""""""""""" Initialization functions """""""""""""""""""
 	# Returns dict {piece_name : img_for_piece_name} for all pieces
 	def load_imgs(self):
 		piece_imgs = {
@@ -39,8 +41,7 @@ class ChessGame:
 			None: ""
 			}
 		return piece_imgs
-
-	# Create 2d list representing the current state of the  self._board
+	# Create 2d list representing the current state of the board
 	def create_board(self):
 		board = [[None for j in range(8)] for i in range(8)]
 		for i in range(8):
@@ -70,8 +71,7 @@ class ChessGame:
 				elif i == 7 and j == 4:
 					board[i][j] = "black_queen"		
 		return  board
-
-	# Create the tkinter gui  self._board 
+	# Create the tkinter gui window and initializes it
 	def create_gui(self):
 		r = Tk()
 		self._piece_imgs = self.load_imgs()
@@ -83,45 +83,53 @@ class ChessGame:
 					b.config(image=self._piece_imgs[piece])
 				b.grid(row=i,column=j, sticky="nwes")
 				b.bind('<Button-1>', self.button_clicked) 
-
 		return r
+	""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-	# Selects the button that triggers click event
+
+	""""""""""""" Control functions """""""""""""""""""
+	# Starts gameloop
+	def play(self):
+		self._root_win.mainloop()
+	# Handles button click events
 	def button_clicked(self, event):
 		b = event.widget
 		i = b.grid_info()["row"]	  
 		j = b.grid_info()["column"]
-		
+
 		# Select button
 		if self._selected_btn is None:
 			if self._board[i][j] is not None and self._board[i][j][0] == self._curr_color[0]:
 				self._selected_btn = b
 		# Deselect button and play move if move valid
 		else:
-			if self.in_checkmate(self._board, self._curr_color):
-				self.update_gui(winner_color = self._curr_color)
-				return
 			x = self._selected_btn.grid_info()["row"]	  
 			y = self._selected_btn.grid_info()["column"]
 			self._selected_btn = None
+			
 			if self.move_valid((x, y),(i,j), self._board, self._curr_color):
 				self._board = self.play_move((x, y),(i,j), self._board)
 				self.pass_move()
 				self.update_gui()
-
 				# AI reply
-				if self.in_checkmate(self._board, self._curr_color):
-					self.update_gui(winner_color = self._curr_color)
-					return
 				if self._ai_opponent:
-					move = self.find_move(deepcopy(self._board), self._curr_color)	# Pass new array, not reference to original so it won't change
+					move = self.find_move(self._board, self._curr_color)	
 					if self.move_valid(*move, self._board, self._curr_color):
 						self._board = self.play_move(*move, self._board)
 						self.pass_move()
-				
 		self.update_gui()
-
-	# Updates gui to match the  self._board
+	# Prints given board on console 
+	def print_board(self, board):
+		for i in range(8):
+			print(33*"=")
+			for j in range(8):
+				if board[i][j] is None:
+					sys.stdout.write("|   ")
+				else:
+					sys.stdout.write("|"+board[i][j].split("_")[0][0] + "_" + board[i][j].split("_")[1][0])
+			print("|")
+		print(33*"=")
+	# Updates gui to match self._board
 	def update_gui(self, winner_color=None):
 		for btn in self._root_win.grid_slaves():
 			i = btn.grid_info()["row"]	  
@@ -136,41 +144,31 @@ class ChessGame:
 			# Color of checkmated king = red
 			if winner_color and piece == winner_color + "_king":
 				btn.config(background = "red")
-
-	# Prints the board on console 
-	def print_board(self, board):
-		for i in range(8):
-			print(33*"=")
-			for j in range(8):
-				if board[i][j] is None:
-					sys.stdout.write("|   ")
-				else:
-					sys.stdout.write("|"+board[i][j].split("_")[0][0] + "_" + board[i][j].split("_")[1][0])
-			print("|")
-		print(33*"=")
-
-	# Return a new board after playing the move on original board
-	def play_move(self, start:tuple, target:tuple, board):
-		t = deepcopy(board)
-		t[target[0]][target[1]] = t[start[0]][start[1]]
-		t[start[0]][start[1]] = None	
-		return t
-
-	# Passes move to the other color by flipping self._curr_color
+		self._root_win.update()	# Refresh tkinter window
+	# Flips self._curr_color
 	def pass_move(self):
 		if self._curr_color == "white":
 			self._curr_color = "black"
 		else:
 			self._curr_color = "white"
+	# Return a new board after playing the move on given board
+	def play_move(self, start:tuple, target:tuple, board):
+		new_board = deepcopy(board)
+		new_board[target[0]][target[1]] = new_board[start[0]][start[1]]
+		new_board[start[0]][start[1]] = None	
+		return new_board
+	""""""""""""""""""""""""""""""""""""""""""""""""""
 
-	# Finds the position of given piece
-	def find_pos(self, board:list, piece:str):
+	
+	""""""""""""" Helper functions """""""""""""""""""
+	# Finds the king's position of given color
+	def king_pos(self, board:list, color:str):
 		for i in range(8):
 			for j in range(8):
-				if board[i][j] == piece:
+				if board[i][j] == color + "_king":
 					return i,j
 		return None
-
+	# Returns whether king of given color is in check
 	def in_check(self, board, color:str):		
 			enemy_targets = []
 			for i in range(8):
@@ -178,16 +176,19 @@ class ChessGame:
 						if board[i][j] != None and board[i][j][0] != color[0]:
 							for target in self.get_avail_squares((i,j), board):
 								enemy_targets.append(target)
-			return self.find_pos(board, color + "_king") in enemy_targets
-	
+			return self.king_pos(board, color) in enemy_targets
+	# Returns whether king of given color is in checkmate
 	def in_checkmate(self, board, color:str):	
-		return len(self.get_legal_moves(board, color)) == 0
+		return len(self.get_valid_moves(board, color)) == 0
+	# Returns whether given position is inside the bounds of chess board
+	def in_bounds(self, i, j):
+		return i >= 0 and j >= 0 and i < 8 and j < 8
+	""""""""""""""""""""""""""""""""""""""""""""""""""
 
-	###################### Game rules functions	######################
 
-	# Returns all legal moves in the current position
-	def get_legal_moves(self, board, color):
-		
+	""""""""""""" Chess rule functions """""""""""""""""""
+	# Returns all valid moves in the current position
+	def get_valid_moves(self, board, color):
 		moves = []
 		for i in range(8):
 			for j in range(8):
@@ -198,11 +199,8 @@ class ChessGame:
 						move = [(i,j), target]
 						if self.move_valid(*move,board, color):
 							moves.append(move)
-
 		return moves
-
 	# Check if given move is valid. Correct color, legal etc
-	# Every validation happens here. get_avail_squares just returns the targets according to rules
 	def move_valid(self, start:tuple, target:tuple, board, color):
 		# Validate bounds
 		if not self.in_bounds(*start) or not self.in_bounds(*target):
@@ -214,7 +212,7 @@ class ChessGame:
 		if not target in self.get_avail_squares(start, board) or self.illegal_move(start, target, board, color):
 			return False
 		return True
-	
+	# Returns all available squares from given start position
 	def get_avail_squares(self, start, board):
 		i,j = start
 		avail_targets = set()
@@ -326,29 +324,22 @@ class ChessGame:
 						avail_targets.add((i+x,j+y))				
 
 		return avail_targets
-	
-	def in_bounds(self, i, j):
-		return i >= 0 and j >=0 and i < 8 and j < 8
-
 	# Checks if a move is illegal by seeing if king is in check after playing the move
 	def illegal_move(self, start, target, board, color):
 		t_board = self.play_move(start, target, board)
 		return self.in_check(t_board, color)
+	""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 	
-	def remove_illegal_moves(self, moves):
-		legal_moves = [move for move in moves if not self.illegal_move(*move)]
-		return legal_moves
-	##################################################################
 
-	####################### AI FUNCTIONS #############################
-	# Minimax modeling: State = [board, curr_color], GoalState = checkmate, get_successors()
-
+# Minimax modeling: State = [board, curr_color], GoalState = checkmate, get_successors()
+	""""""""""""" AI agent functions """""""""""""""""""
+	# Finds move for given color
 	def find_move(self, board, color:str):
 		state = [board, color]
 		
 		min_minimax = 999
 		best_move = None
-		for move in self.get_legal_moves(board, color):
+		for move in self.get_valid_moves(board, color):
 			s = [self.play_move(*move, board), "white"]
 			m = self.minimax(s, 0)
 			if m < min_minimax:
@@ -356,7 +347,7 @@ class ChessGame:
 				best_move = move
 
 		return best_move
-
+	# Evaluates the minimax value for given state
 	def minimax(self, state, depth):
 		board, color = state
 		depth += 1
@@ -373,13 +364,12 @@ class ChessGame:
 			return max(successor_minimax)
 		else:	# Minimizer
 			return min(successor_minimax)
-	
 	# Get successor states of given state
 	def get_successors(self, state):
 		board, color = state
 
 		successors = []
-		for move in self.get_legal_moves(board, color):
+		for move in self.get_valid_moves(board, color):
 			s = [self.play_move(move[0],move[1], board)]
 			if color == "white":
 				s.append("black")
@@ -388,11 +378,8 @@ class ChessGame:
 			successors.append(s)
 
 		return successors
+	""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
-	##################################################################
 
-	# Starts gameloop
-	def play(self):
-		self._root_win.mainloop()
 
-	
+
