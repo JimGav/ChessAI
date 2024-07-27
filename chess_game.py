@@ -143,7 +143,7 @@ class ChessGame:
 			# Color of checkmated king = red
 			if winner_color and piece == winner_color + "_king":
 				btn.config(background = "red")
-		self._root_win.update()	# Refresh tkinter window
+		self._root_win.update_idletasks()	# Refresh tkinter window
 	# Flips self._curr_color
 	def pass_move(self):
 		if self._curr_color == "white":
@@ -397,7 +397,6 @@ class ChessGame:
 	def eval(self, state):
 		board, color = state
 		return self.get_points(board, "white")-self.get_points(board, "black")
-	
 	""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 
