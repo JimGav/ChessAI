@@ -155,6 +155,13 @@ class ChessGame:
 		new_board = deepcopy(board)
 		new_board[target[0]][target[1]] = new_board[start[0]][start[1]]
 		new_board[start[0]][start[1]] = None	
+
+		piece = board[start[0]][start[1]]
+		if piece == "white_pawn" and target[0] == 7:
+			new_board[target[0]][target[1]] = "white_queen"
+		if piece == "black_pawn" and target[0] == 0:
+			new_board[target[0]][target[1]] = "black_queen"
+
 		return new_board
 	""""""""""""""""""""""""""""""""""""""""""""""""""
 
@@ -243,8 +250,6 @@ class ChessGame:
 				avail_targets.add((i+1,j+1))
 			if i < 7 and j > 0 and  board[i+1][j-1] is not None and  board[i+1][j-1][0] == "b":
 				avail_targets.add((i+1,j-1))
-			if i == 7:	#todo: move this shit
-				board[i][j] = "white_queen"
 	# black pawns
 		if  board[i][j] == "black_pawn":
 			if i>0 and  board[i-1][j] is None:
@@ -255,8 +260,6 @@ class ChessGame:
 				avail_targets.add((i-1,j+1))
 			if i>0 and j > 0 and  board[i-1][j-1] is not None and  board[i-1][j-1][0] == "w":
 				avail_targets.add((i-1,j-1))
-			if i == 0:
-				board[i][j] = "black_queen"
 		# knights
 		if  board[i][j] == "white_knight" or  board[i][j] == "black_knight":
 			for square in [(i-1,j-2),(i-2,j-1),(i+1,j-2),(i+2,j-1),(i-1,j+2),(i-2,j+1),(i+1,j+2),(i+2,j+1)]:
