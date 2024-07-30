@@ -4,19 +4,20 @@ import random,sys,time
 
 """
 TODO:
-- fix pawn promote + castling
+- fix castling under threat
 - optimize performance
 """
 
 
 class ChessGame:
 	# Constructor
-	def __init__(self, colors=["midnight blue", "gainsboro"], ai_max_move_depth=2):
+	def __init__(self, colors=["midnight blue", "gainsboro"], ai_max_move_depth=1):
 		self._colors = colors				# List of 2 colors for the gui
 		self._curr_color = "white"	# Color of whoever's turn is it
 		self._selected_btn = None 	# The button that is selected on the gui
 		self._piece_imgs = None			# Images for each piece. create_gui will load them after root window is created
-		self._ai_opponent = True		
+		self._ai_opponent = True	
+		self._has_moved = {"white_king": False, "black_king": False}	# Keep track if a king has moved. Used for castling 
 		self._ai_max_move_depth = ai_max_move_depth	# Maximum recursion depth for minimax function => how many states ahead will the agent check
 		self._board = self.create_board()	 	# Create 2d list representing the current state of self._board
 		self._root_win = self.create_gui()	# Create the tkinter gui 
@@ -107,15 +108,15 @@ class ChessGame:
 			self._selected_btn = None
 			
 			if self.move_valid((x, y),(i,j), self._board, self._curr_color):
-				self._board = self.play_move((x, y),(i,j), self._board)
+				self._board = self.play_move((x, y),(i,j), self._board, True)
 				self.pass_move()
 				self.update_gui()
 				# AI reply
-				if self._ai_opponent:
-					move = self.find_move(self._board, self._curr_color)	
-					if self.move_valid(*move, self._board, self._curr_color):
-						self._board = self.play_move(*move, self._board)
-						self.pass_move()
+				# if self._ai_opponent:
+				# 	move = self.find_move(self._board, self._curr_color)	
+				# 	if self.move_valid(*move, self._board, self._curr_color):
+				# 		self._board = self.play_move(*move, self._board, True) 
+				# 		self.pass_move()
 		self.update_gui()
 	# Prints given board on console 
 	def print_board(self, board):
@@ -151,12 +152,35 @@ class ChessGame:
 		else:
 			self._curr_color = "white"
 	# Return a new board after playing the move on given board
-	def play_move(self, start:tuple, target:tuple, board):
+	def play_move(self, start:tuple, target:tuple, board, main_call = False):		# main_call ->  board == self._board
 		new_board = deepcopy(board)
-		new_board[target[0]][target[1]] = new_board[start[0]][start[1]]
-		new_board[start[0]][start[1]] = None	
-
 		piece = board[start[0]][start[1]]
+		color = self.get_color(board, start[0] ,start[1])
+
+		if piece == color + "_king" and not self._has_moved[color + "_king"] and abs(target[1] - start[1]) > 1:
+			# Castling
+			if color == "white":
+				x = 0
+			else:
+				x = 7
+			if target == (x,0):	# O-O
+				new_board[x][1] = color + "_king"
+				new_board[x][3] = None
+				new_board[x][0] = None
+				new_board[x][2] = color + "_rook"
+			elif target == (x, 7): # O-O-O
+				new_board[x][5] = color + "_king"
+				new_board[x][3] = None
+				new_board[x][7] = None
+				new_board[x][4] = color + "_rook"
+			if main_call:
+				self._has_moved[color + "_king"] = True
+		else:
+			# Normal move
+			new_board[target[0]][target[1]] = new_board[start[0]][start[1]]
+			new_board[start[0]][start[1]] = None	
+
+		# Handle pawn promotions
 		if piece == "white_pawn" and target[0] == 7:
 			new_board[target[0]][target[1]] = "white_queen"
 		if piece == "black_pawn" and target[0] == 0:
@@ -176,13 +200,12 @@ class ChessGame:
 		return None
 	# Returns whether king of given color is in check
 	def in_check(self, board, color:str):		
-			enemy_targets = []
-			for i in range(8):
-					for j in range(8):
-						if board[i][j] != None and board[i][j][0] != color[0]:
-							for target in self.get_avail_squares((i,j), board):
-								enemy_targets.append(target)
-			return self.king_pos(board, color) in enemy_targets
+			enemy_color = None
+			if color == "white":
+				enemy_color = "black"
+			else:
+				enemy_color = "white"
+			return self.king_pos(board, color) in self.get_all_targets(board, enemy_color)
 	# Returns whether king of given color is in checkmate
 	def in_checkmate(self, board, color:str):	
 		return len(self.get_valid_moves(board, color)) == 0
@@ -206,6 +229,25 @@ class ChessGame:
 				if piece == color + "_queen":
 					points += 9
 		return points
+	# Returns a list of all squares that are targeted by given color
+	def get_all_targets(self, board, color):
+		targets = []
+		for i in range(8):
+				for j in range(8):
+					if board[i][j] != None and board[i][j][0] == color[0]:
+						for target in self.get_avail_squares((i,j), board):
+							targets.append(target)
+		return targets
+	# Returns the color of the piece that occupies given square
+	def get_color(self, board, i, j):
+		piece = board[i][j]
+		return piece.split("_")[0]
+	# Returns the other color
+	def flip_color(self, color):
+		if color == "white":
+			return "black"
+		else:
+			return "white"
 	""""""""""""""""""""""""""""""""""""""""""""""""""
 
 
@@ -220,7 +262,7 @@ class ChessGame:
 				if board[i][j][0] == color[0]:
 					for target in self.get_avail_squares((i,j),board):
 						move = [(i,j), target]
-						if self.move_valid(*move,board, color):
+						if self.move_valid(*move, board, color):
 							moves.append(move)
 		return moves
 	# Check if given move is valid. Correct color, legal etc
@@ -238,33 +280,33 @@ class ChessGame:
 	# Returns all available squares from given start position
 	def get_avail_squares(self, start, board):
 		i,j = start
-		avail_targets = set()
+		avail_squares = set()
 
 		# white pawns
 		if  board[i][j] == "white_pawn":
 			if i < 7 and board[i+1][j] is None:
-				avail_targets.add((i+1,j))
+				avail_squares.add((i+1,j))
 			if i == 1 and  board[i+2][j] is None and  board[i+1][j] is None:
-				avail_targets.add((i+2,j))
+				avail_squares.add((i+2,j))
 			if i < 7 and j < 7 and  board[i+1][j+1] is not None and board[i+1][j+1][0] == "b":
-				avail_targets.add((i+1,j+1))
+				avail_squares.add((i+1,j+1))
 			if i < 7 and j > 0 and  board[i+1][j-1] is not None and  board[i+1][j-1][0] == "b":
-				avail_targets.add((i+1,j-1))
+				avail_squares.add((i+1,j-1))
 	# black pawns
 		if  board[i][j] == "black_pawn":
 			if i>0 and  board[i-1][j] is None:
-				avail_targets.add((i-1,j))
+				avail_squares.add((i-1,j))
 			if i == 6 and  board[i-2][j] is None  and  board[i-1][j] is None:
-				avail_targets.add((i-2,j))
+				avail_squares.add((i-2,j))
 			if i>0 and j < 7 and  board[i-1][j+1] is not None and  board[i-1][j+1][0] == "w":
-				avail_targets.add((i-1,j+1))
+				avail_squares.add((i-1,j+1))
 			if i>0 and j > 0 and  board[i-1][j-1] is not None and  board[i-1][j-1][0] == "w":
-				avail_targets.add((i-1,j-1))
+				avail_squares.add((i-1,j-1))
 		# knights
 		if  board[i][j] == "white_knight" or  board[i][j] == "black_knight":
 			for square in [(i-1,j-2),(i-2,j-1),(i+1,j-2),(i+2,j-1),(i-1,j+2),(i-2,j+1),(i+1,j+2),(i+2,j+1)]:
 				if self.in_bounds(*square) and (board[square[0]][square[1]] is None or  board[square[0]][square[1]][0] !=  board[i][j][0]):
-					avail_targets.add(square)
+					avail_squares.add(square)
 		# bishops
 		if  board[i][j] in ("white_bishop", "black_bishop","white_queen","black_queen"):
 			# Top right diagonal
@@ -272,7 +314,7 @@ class ChessGame:
 				if not self.in_bounds(i+r,j+r):
 					break
 				if  board[i+r][j+r] is None or  board[i+r][j+r][0] !=  board[i][j][0]:
-					avail_targets.add((i+r,j+r))
+					avail_squares.add((i+r,j+r))
 				if  board[i+r][j+r] is not None:
 					break
 			# Top left diagonal
@@ -280,7 +322,7 @@ class ChessGame:
 				if not self.in_bounds(i+r,j-r):
 					break
 				if  board[i+r][j-r] is None or  board[i+r][j-r][0] !=  board[i][j][0]:
-					avail_targets.add((i+r,j-r))
+					avail_squares.add((i+r,j-r))
 				if  board[i+r][j-r] is not None:
 					break
 			# Bottom right diagonal
@@ -288,7 +330,7 @@ class ChessGame:
 				if not self.in_bounds(i-r,j+r):
 					break
 				if  board[i-r][j+r] is None or  board[i-r][j+r][0] !=  board[i][j][0]:
-					avail_targets.add((i-r,j+r))
+					avail_squares.add((i-r,j+r))
 				if  board[i-r][j+r] is not None:
 					break
 			# Bottom left diagonal
@@ -296,7 +338,7 @@ class ChessGame:
 				if not self.in_bounds(i-r,j-r):
 					break
 				if  board[i-r][j-r] is None or  board[i-r][j-r][0] !=  board[i][j][0]:
-					avail_targets.add((i-r,j-r))
+					avail_squares.add((i-r,j-r))
 				if  board[i-r][j-r] is not None:
 					break
 		# rooks
@@ -306,7 +348,7 @@ class ChessGame:
 				if not self.in_bounds(i+r,j):
 					break
 				if  board[i+r][j] is None or  board[i+r][j][0] !=  board[i][j][0]:
-					avail_targets.add((i+r,j))
+					avail_squares.add((i+r,j))
 				if  board[i+r][j] is not None:
 					break
 			# Left
@@ -314,7 +356,7 @@ class ChessGame:
 				if not self.in_bounds(i,j-r):
 					break
 				if  board[i][j-r] is None or  board[i][j-r][0] !=  board[i][j][0]:
-					avail_targets.add((i,j-r))
+					avail_squares.add((i,j-r))
 				if  board[i][j-r] is not None:
 					break
 			# Right
@@ -322,7 +364,7 @@ class ChessGame:
 				if not self.in_bounds(i,j+r):
 					break
 				if  board[i][j+r] is None or  board[i][j+r][0] !=  board[i][j][0]:
-					avail_targets.add((i,j+r))
+					avail_squares.add((i,j+r))
 				if  board[i][j+r] is not None:
 					break
 			# Bottom 
@@ -330,19 +372,41 @@ class ChessGame:
 				if not self.in_bounds(i-r,j):
 					break
 				if  board[i-r][j] is None or  board[i-r][j][0] !=  board[i][j][0]:
-					avail_targets.add((i-r,j))
+					avail_squares.add((i-r,j))
 				if  board[i-r][j] is not None:
 					break
-		# King #todo: add castling 
-		if  board[i][j] == "white_king" or  board[i][j] == "black_king":
+		# King
+		color = self.get_color(board, i, j)
+		if  board[i][j] == color + "_king":
 			for x in range(-1,2):
 				for y in range(-1,2):
 					if not self.in_bounds(i+x,j+y):
 						continue
 					if  board[i+x][j+y] is None or  board[i+x][j+y][0] !=  board[i][j][0]:
-						avail_targets.add((i+x,j+y))				
+						avail_squares.add((i+x,j+y))		
 
-		return avail_targets
+			# Castling
+			if not self._has_moved[color + "_king"]:
+				x = 0 if color == "white" else 7
+				# Long Castling
+				f = True
+				for y in range(j-1, j-3, -1):
+					if board[x][y] != None: 
+						f = False
+						break
+				if f and board[x][j-3] == color + "_rook":	
+					avail_squares.add((x, j-3))
+				# Short Castling
+				f = True
+				for y in range(j+1, j+4):
+					if board[x][y] != None: 
+						f = False
+						break
+				if f and board[x][j+4] == color + "_rook":	
+					avail_squares.add((x, j+4))
+		
+
+		return avail_squares
 	# Checks if a move is illegal by seeing if king is in check after playing the move
 	def illegal_move(self, start, target, board, color):
 		t_board = self.play_move(start, target, board)
@@ -396,7 +460,7 @@ class ChessGame:
 			successors.append(s)
 
 		return successors
-	# Evaluates the minimax value of a given state
+	# Evaluates a given state
 	def eval(self, state):
 		board, color = state
 		return self.get_points(board, "white")-self.get_points(board, "black")
