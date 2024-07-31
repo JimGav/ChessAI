@@ -9,6 +9,7 @@ Welcome to My Chess Engine! This project is a basic implementation of a chess en
 - player color selecting + flip UI board to match player color
 - castling, en pessant
 - heuristics to improve eval function
+- write some tests
 
 ## Installation
 1. **Clone the repository**: 
