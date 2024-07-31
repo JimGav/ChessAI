@@ -112,7 +112,9 @@ class ChessGame:
 				self._board = self.play_move((x, y),(i,j), self._board, True)
 				self.pass_move()
 				if self.in_checkmate(self._board, self._curr_color):
-							self._winner = self._curr_color
+					self._winner = self._curr_color
+					self.update_gui(winner_color = self._winner)
+					return
 				self.update_gui(winner_color = self._winner)
 				# AI reply
 				if self._ai_opponent:
@@ -293,8 +295,8 @@ class ChessGame:
 		if piece == "white_pawn":
 			if self.in_bounds(i+1,j) and board[i+1][j] is None:
 				avail_squares.append((i+1,j))
-			if i == 1 and board[i+2][j] is None:
-				avail_squares.append((i+2,j))
+				if i == 1 and board[i+2][j] is None:
+					avail_squares.append((i+2,j))
 			for target in self.get_piece_targets(board, i, j):
 				if not self.in_bounds(target[0], target[1]):
 					continue
@@ -307,8 +309,8 @@ class ChessGame:
 		elif piece == "black_pawn":
 			if self.in_bounds(i-1,j) and board[i-1][j] is None:
 				avail_squares.append((i-1,j))
-			if i == 6 and board[i-2][j] is None:
-				avail_squares.append((i-2,j))
+				if i == 6 and board[i-2][j] is None:
+					avail_squares.append((i-2,j))
 			for target in self.get_piece_targets(board, i, j):
 				if not self.in_bounds(target[0], target[1]):
 					continue
