@@ -4,6 +4,7 @@ import random,sys,time
 
 """
 TODO:
+- fix castling
 - fix castling under threat
 - optimize performance
 """
@@ -22,7 +23,7 @@ class ChessGame:
 		self._ai_max_move_depth = ai_max_move_depth	# Maximum recursion depth for minimax function => how many states ahead will the agent check
 		self._board = self.create_board()	 	# Create 2d list representing the current state of self._board
 		self._root_win = self.create_gui()	# Create the tkinter gui 
-
+		self.count = 0
 	""""""""""""" Initialization functions """""""""""""""""""
 	# Returns dict {piece_name : img_for_piece_name} for all pieces
 	def load_imgs(self):
@@ -135,7 +136,10 @@ class ChessGame:
 				if board[i][j] is None:
 					sys.stdout.write("|   ")
 				else:
-					sys.stdout.write("|"+board[i][j].split("_")[0][0] + "_" + board[i][j].split("_")[1][0])
+					if board[i][j] == "white_knight" or board[i][j] == "black_knight":
+						sys.stdout.write("|"+board[i][j].split("_")[0][0] + "_" + "n")
+					else:
+						sys.stdout.write("|"+board[i][j].split("_")[0][0] + "_" + board[i][j].split("_")[1][0])
 			print("|")
 		print(33*"=")
 	# Updates gui to match self._board
@@ -320,7 +324,27 @@ class ChessGame:
 				if t_piece[0] != color[0]:
 					avail_squares.append((target[0], target[1]))
 			return avail_squares
-
+		elif piece == color + "_king":
+			# Castling
+			if not self._has_moved[color + "_king"]:
+				x = 0 if color == "white" else 7
+				# Short Castling
+				f = True
+				for y in range(j-1, j-3, -1):
+					if board[x][y] != None: 
+						f = False
+						break
+				if f and board[x][j-3] == color + "_rook":	
+					avail_squares.append((x, j-3))
+				# Long Castling
+				f = True
+				for y in range(j+1, j+4):
+					if board[x][y] != None: 
+						f = False
+						break
+				if f and board[x][j+4] == color + "_rook":	
+					avail_squares.append((x, j+4))
+		
 		targets = self.get_piece_targets(board, i ,j)
 		for target in targets:
 			if target is None or self.get_color(board, *target) != self.get_color(board, *start):
@@ -425,19 +449,19 @@ class ChessGame:
 	""""""""""""" AI agent functions """""""""""""""""""
 	# Finds move for given color
 	def find_move(self, board, color:str):
-		min_minimax = 99999
+		min_minimax = float("inf")
 		best_move = None
 		legal_moves = self.get_legal_moves(board, color)
-		random.shuffle(legal_moves)
 		for move in legal_moves:
 			s = [self.play_move(*move, board), "white"]
-			m = self.minimax(s, 0)
+			m = self.minimax(s, 0, float("-inf"), float("inf"), color=="black")
 			if m < min_minimax:
 				min_minimax = m
 				best_move = move
 		return best_move
-	# Evaluates the minimax value for given state
-	def minimax(self, state, depth):
+	# Finds the minimax value for given state
+	def minimax(self, state, depth, alpha, beta, maximizer):
+		self.count += 1
 		board, color = state
 		depth += 1
 
@@ -448,12 +472,24 @@ class ChessGame:
 		if depth == self._ai_max_move_depth:
 			return self.eval(state)
 		
-		successor_minimax = [self.minimax(successor, depth) for successor in self.get_successors(state)]
-
-		if color == "white":	# Maximizer
-			return max(successor_minimax)
-		else:	# Minimizer
-			return min(successor_minimax)
+		if maximizer:
+			bestVal = float("-inf") 
+			for successor in self.get_successors(state):
+					value = self.minimax(successor, depth, alpha, beta, False)
+					bestVal = max( bestVal, value) 
+					alpha = max( alpha, bestVal)
+					if beta <= alpha:
+							break
+			return bestVal
+		else:
+			bestVal = float("inf") 
+			for successor in self.get_successors(state):
+					value = self.minimax(successor, depth, alpha, beta, True)
+					bestVal = min( bestVal, value) 
+					beta = min( beta, bestVal)
+					if beta <= alpha:
+							break
+			return bestVal
 	# Get successor states of given state
 	def get_successors(self, state):
 		board, color = state
@@ -471,13 +507,17 @@ class ChessGame:
 	# Evaluates a given state
 	def eval(self, state):
 		board, color = state
-		e = self.capture_heur(board, color) + self.center_heur(board, color) * 0.1
+		c = self.eval_points(board, color) * 10000
+		c2 = self.eval_center(board, color) * 10
+		c3 = self.eval_mobile(board, color) * 0.1
+
+		e =  c + c2 + c3
 		return e
-	# Heuristic to capture the most valuable pieces
-	def capture_heur(self, board, color):
+	# Evaluates state based on how many points each side has
+	def eval_points(self, board, color):
 		return self.get_points(board, "white")-self.get_points(board, "black")
-	# Heuristic for mobilizing the pieces as much as possible
-	def center_heur(self, board, color):
+	# Evaluates state based on how much is side holds the center
+	def eval_center(self, board, color):
 		w = 0
 		b = 0
 		for i in range(8):
@@ -489,28 +529,29 @@ class ChessGame:
 					w += self.center_occupation(board , i ,j)
 				else:
 					b += self.center_occupation(board , i ,j)
+
 		return w-b
-	# Heuristic to develop pieces to active squares
-	def mobile_heur(self, board, color):
+	# Evaluates state based on how mobile each side's pieces are
+	def eval_mobile(self, board, color):
 		w = 0
 		b = 0
 		for i in range(8):
 			for j in range(8):
 				piece = board[i][j]
-				if piece is None or piece == color + "_king" or piece == color + "_pawn":
+				c = self.get_color(board, i, j)
+				if piece is None or piece == color + "_king" or piece == color + "_pawn" or piece == color + "rook":
 					continue
 				if piece == "white_queen":
 					w += len(self.get_piece_targets(board, i, j))/10
 				elif piece == "black_queen":
 					b += len(self.get_piece_targets(board, i, j))/10
 				else:
-					if color == "white":
+					if c == "white":
 						w += len(self.get_piece_targets(board, i, j))
 					else:
 						b += len(self.get_piece_targets(board, i, j))
 		
 		return w-b
-
 	""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 
