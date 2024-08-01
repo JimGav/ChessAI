@@ -7,7 +7,7 @@ Welcome to My Chess Engine! This project is a basic implementation of a chess en
 
 ## ToDo
 - player color selecting + flip UI board to match player color
-- castling, en pessant
+- fix castling under threats, en pessant
 - heuristics to improve eval function
 - write some tests
 
