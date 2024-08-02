@@ -12,7 +12,7 @@ TODO:
 
 class ChessGame:
 	# Constructor
-	def __init__(self, colors=["midnight blue", "gainsboro"], ai_max_move_depth=1, ai_opponent = True):
+	def __init__(self, colors=["midnight blue", "gainsboro"], ai_max_move_depth=3, ai_opponent = True):
 		self._colors = colors				# List of 2 colors for the gui
 		self._curr_color = "white"	# Color of whoever's turn is it
 		self._selected_btn = None 	# The button that is selected on the gui
@@ -23,7 +23,10 @@ class ChessGame:
 		self._ai_max_move_depth = ai_max_move_depth	# Maximum recursion depth for minimax function => how many states ahead will the agent check
 		self._board = self.create_board()	 	# Create 2d list representing the current state of self._board
 		self._root_win = self.create_gui()	# Create the tkinter gui 
-		self.count = 0
+		self._tt = dict() # Transposition table hodling {state, minimax_val} pairs
+		self._zobrist_keys = self.generate_zobrist_keys()
+		self.count = 0	
+		random.seed(100)
 	""""""""""""" Initialization functions """""""""""""""""""
 	# Returns dict {piece_name : img_for_piece_name} for all pieces
 	def load_imgs(self):
@@ -86,6 +89,16 @@ class ChessGame:
 				b.grid(row=i,column=j, sticky="nwes")
 				b.bind('<Button-1>', self.button_clicked) 
 		return r
+	# Generates an 8x8 array containing 1 random int for every piece and square
+	def generate_zobrist_keys(self):
+		a = [[None for y in range(8)] for x in range(8)]
+		for i in range(8):
+			for j in range(8):
+				a[i][j] = dict()
+				for color in ("white", "black"):
+					for key in (color + "_king", color + "_queen", color + "_pawn", color + "_rook", color + "_knight", color + "_bishop", color):
+						a[i][j][key] = random.randint(0, 999999999)
+		return a
 	""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 
@@ -251,8 +264,13 @@ class ChessGame:
 	# Returns how many center squares the given piece occupies
 	def center_occupation(self, board, i, j):
 		targets = self.get_piece_targets(board, i, j)
+		color = self.get_color(board, i ,j)
 		count = 0
-		for square in ((3,3),(3,4)):
+		if color == "white":
+			center_sqrs = ((4,3),(4,4))
+		else:
+			center_sqrs = ((3,4),(3,3))
+		for square in center_sqrs:
 			if square in targets:
 				count += 1
 		return count
@@ -331,7 +349,7 @@ class ChessGame:
 				# Short Castling
 				f = True
 				for y in range(j-1, j-3, -1):
-					if board[x][y] != None: 
+					if self.in_bounds(x,y) and board[x][y] != None: 
 						f = False
 						break
 				if f and board[x][j-3] == color + "_rook":	
@@ -339,7 +357,7 @@ class ChessGame:
 				# Long Castling
 				f = True
 				for y in range(j+1, j+4):
-					if board[x][y] != None: 
+					if self.in_bounds(x,y) and board[x][y] != None: 
 						f = False
 						break
 				if f and board[x][j+4] == color + "_rook":	
@@ -458,12 +476,18 @@ class ChessGame:
 			if m < min_minimax:
 				min_minimax = m
 				best_move = move
+		print(self.count)
 		return best_move
 	# Finds the minimax value for given state
 	def minimax(self, state, depth, alpha, beta, maximizer):
 		self.count += 1
 		board, color = state
 		depth += 1
+
+		# Before calculating minimax, look if it has already been calculated
+		state_hash = self.zobrist_hash(board, color)
+		if state_hash in self._tt:
+			return self._tt[state_hash]
 
 		if self.in_checkmate(board, "black"):
 			return float("inf")
@@ -475,20 +499,22 @@ class ChessGame:
 		if maximizer:
 			bestVal = float("-inf") 
 			for successor in self.get_successors(state):
-					value = self.minimax(successor, depth, alpha, beta, False)
-					bestVal = max( bestVal, value) 
-					alpha = max( alpha, bestVal)
-					if beta <= alpha:
-							break
+				value = self.minimax(successor, depth, alpha, beta, False)
+				bestVal = max( bestVal, value) 
+				alpha = max( alpha, bestVal)
+				if beta <= alpha:
+					break
+			self._tt[state_hash] = bestVal
 			return bestVal
 		else:
 			bestVal = float("inf") 
 			for successor in self.get_successors(state):
-					value = self.minimax(successor, depth, alpha, beta, True)
-					bestVal = min( bestVal, value) 
-					beta = min( beta, bestVal)
-					if beta <= alpha:
-							break
+				value = self.minimax(successor, depth, alpha, beta, True)
+				bestVal = min( bestVal, value) 
+				beta = min( beta, bestVal)
+				if beta <= alpha:
+					break
+			self._tt[state_hash] = bestVal
 			return bestVal
 	# Get successor states of given state
 	def get_successors(self, state):
@@ -552,6 +578,20 @@ class ChessGame:
 						b += len(self.get_piece_targets(board, i, j))
 		
 		return w-b
+	# Zobrist hashes a state
+	def zobrist_hash(self, board, color):
+		hash = None
+		for i in range(8):
+			for j in range(8):
+				if board[i][j] is None:
+					continue
+				piece_hash_val = self._zobrist_keys[i][j][board[i][j]]
+				if hash is None:
+					hash = piece_hash_val
+				else:
+					hash = hash ^ piece_hash_val
+		hash = hash ^ self._zobrist_keys[0][0][color]
+		return hash
 	""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 
